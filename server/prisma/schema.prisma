@@ -1,0 +1,439 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  SUPER_ADMIN
+  SPORT_ADMIN
+  COACH
+  TEAM_MANAGER
+  MEMBER
+  MATCH_OFFICIAL
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
+}
+
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+enum MembershipStatus {
+  ACTIVE
+  SUSPENDED
+  LEFT
+}
+
+enum GenderCategory {
+  MEN
+  WOMEN
+  MIXED
+}
+
+enum FixtureStatus {
+  SCHEDULED
+  POSTPONED
+  CANCELLED
+  COMPLETED
+}
+
+enum TrainingStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum AnnouncementScope {
+  PUBLIC
+  SPORT
+  MEMBERS_ONLY
+}
+
+enum AnnouncementStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum NotificationType {
+  SYSTEM
+  ANNOUNCEMENT
+  FIXTURE
+  TRAINING
+  MEMBERSHIP
+  RESULT
+}
+
+enum PerformanceType {
+  MATCH
+  TRAINING
+}
+
+model User {
+  id              String     @id @default(uuid()) @db.Uuid
+  admissionNumber String?    @unique
+  firstName       String
+  lastName        String
+  email           String     @unique
+  phone           String?
+  passwordHash    String
+  role            Role       @default(MEMBER)
+  status          UserStatus @default(ACTIVE)
+  profileImageUrl String?
+  course          String?
+  yearOfStudy     Int?
+  lastLoginAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  refreshTokens            RefreshToken[]
+  sportAdminAssignments    SportAdministrator[]
+  memberships              Membership[]
+  interestApplications     InterestApplication[]
+  approvedMemberships      Membership[]          @relation("MembershipApprovedBy")
+  reviewedApplications     InterestApplication[] @relation("InterestApplicationReviewedBy")
+  teamMemberships          TeamMember[]
+  captainedTeams           Team[]                @relation("TeamCaptain")
+  coachedTeams             Team[]                @relation("TeamCoach")
+  managedTeams             Team[]                @relation("TeamManager")
+  matchOfficialAssignments MatchOfficial[]
+  attendances              Attendance[]
+  performances             Performance[]
+  announcements            Announcement[]
+  notifications            Notification[]
+  announcementReads        AnnouncementRead[]
+  auditLogs                AuditLog[]            @relation("AuditActor")
+
+  @@index([role])
+  @@index([status])
+  @@index([lastName, firstName])
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  tokenHash String    @unique
+  userId    String    @db.Uuid
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Sport {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  imageUrl    String?
+  icon        String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  administrators   SportAdministrator[]
+  memberships      Membership[]
+  applications     InterestApplication[]
+  teams            Team[]
+  fixtures         Fixture[]
+  trainingSessions TrainingSession[]
+  announcements    Announcement[]
+  performances     Performance[]
+
+  @@index([isActive])
+}
+
+model SportAdministrator {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  sportId   String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sport Sport @relation(fields: [sportId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sportId])
+  @@index([sportId])
+}
+
+model Membership {
+  id           String           @id @default(uuid()) @db.Uuid
+  userId       String           @db.Uuid
+  sportId      String           @db.Uuid
+  status       MembershipStatus @default(ACTIVE)
+  joinedAt     DateTime         @default(now())
+  approvedById String?          @db.Uuid
+  approvedAt   DateTime?
+
+  user       User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sport      Sport @relation(fields: [sportId], references: [id], onDelete: Cascade)
+  approvedBy User? @relation("MembershipApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, sportId])
+  @@index([sportId, status])
+  @@index([userId, status])
+}
+
+model InterestApplication {
+  id           String            @id @default(uuid()) @db.Uuid
+  userId       String            @db.Uuid
+  sportId      String            @db.Uuid
+  position     String?
+  experience   String?
+  reason       String?
+  status       ApplicationStatus @default(PENDING)
+  reviewedById String?           @db.Uuid
+  reviewedAt   DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  user       User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sport      Sport @relation(fields: [sportId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("InterestApplicationReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([sportId, status])
+  @@index([userId, status])
+  @@index([createdAt])
+}
+
+model Team {
+  id          String          @id @default(uuid()) @db.Uuid
+  sportId     String          @db.Uuid
+  name        String
+  slug        String
+  gender      GenderCategory?
+  category    String?
+  description String?
+  captainId   String?         @db.Uuid
+  coachId     String?         @db.Uuid
+  managerId   String?         @db.Uuid
+  imageUrl    String?
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  sport       Sport        @relation(fields: [sportId], references: [id], onDelete: Cascade)
+  captain     User?        @relation("TeamCaptain", fields: [captainId], references: [id], onDelete: SetNull)
+  coach       User?        @relation("TeamCoach", fields: [coachId], references: [id], onDelete: SetNull)
+  manager     User?        @relation("TeamManager", fields: [managerId], references: [id], onDelete: SetNull)
+  members     TeamMember[]
+  homeMatches Fixture[]    @relation("FixtureHomeTeam")
+  awayMatches Fixture[]    @relation("FixtureAwayTeam")
+
+  @@unique([sportId, slug])
+  @@index([sportId, isActive])
+}
+
+model TeamMember {
+  id           String    @id @default(uuid()) @db.Uuid
+  teamId       String    @db.Uuid
+  userId       String    @db.Uuid
+  jerseyNumber Int?
+  position     String?
+  isCaptain    Boolean   @default(false)
+  joinedAt     DateTime  @default(now())
+  leftAt       DateTime?
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+  @@index([teamId, isCaptain])
+}
+
+model Fixture {
+  id           String        @id @default(uuid()) @db.Uuid
+  sportId      String        @db.Uuid
+  homeTeamId   String?       @db.Uuid
+  awayTeamId   String?       @db.Uuid
+  opponentName String?
+  competition  String?
+  venue        String
+  scheduledAt  DateTime
+  status       FixtureStatus @default(SCHEDULED)
+  notes        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  sport     Sport           @relation(fields: [sportId], references: [id], onDelete: Cascade)
+  homeTeam  Team?           @relation("FixtureHomeTeam", fields: [homeTeamId], references: [id], onDelete: SetNull)
+  awayTeam  Team?           @relation("FixtureAwayTeam", fields: [awayTeamId], references: [id], onDelete: SetNull)
+  officials MatchOfficial[]
+  result    MatchResult?
+
+  @@index([sportId, scheduledAt])
+  @@index([status, scheduledAt])
+}
+
+model MatchOfficial {
+  id             String   @id @default(uuid()) @db.Uuid
+  fixtureId      String   @db.Uuid
+  userId         String   @db.Uuid
+  assignmentRole String?
+  createdAt      DateTime @default(now())
+
+  fixture Fixture @relation(fields: [fixtureId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([fixtureId, userId])
+  @@index([userId])
+}
+
+model TrainingSession {
+  id           String         @id @default(uuid()) @db.Uuid
+  sportId      String         @db.Uuid
+  teamId       String?        @db.Uuid
+  title        String
+  description  String?
+  venue        String
+  scheduledAt  DateTime
+  durationMins Int?
+  status       TrainingStatus @default(SCHEDULED)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  sport       Sport        @relation(fields: [sportId], references: [id], onDelete: Cascade)
+  attendances Attendance[]
+
+  @@index([sportId, scheduledAt])
+  @@index([teamId, scheduledAt])
+}
+
+model Attendance {
+  id                String   @id @default(uuid()) @db.Uuid
+  trainingSessionId String   @db.Uuid
+  userId            String   @db.Uuid
+  present           Boolean  @default(false)
+  notes             String?
+  recordedAt        DateTime @default(now())
+
+  trainingSession TrainingSession @relation(fields: [trainingSessionId], references: [id], onDelete: Cascade)
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([trainingSessionId, userId])
+  @@index([userId, present])
+}
+
+model MatchResult {
+  id           String   @id @default(uuid()) @db.Uuid
+  fixtureId    String   @unique @db.Uuid
+  homeScore    Int?
+  awayScore    Int?
+  resultText   String?
+  summary      String?
+  recordedById String?  @db.Uuid
+  recordedAt   DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  fixture Fixture @relation(fields: [fixtureId], references: [id], onDelete: Cascade)
+}
+
+model Performance {
+  id                String          @id @default(uuid()) @db.Uuid
+  userId            String          @db.Uuid
+  sportId           String          @db.Uuid
+  fixtureId         String?         @db.Uuid
+  trainingSessionId String?         @db.Uuid
+  type              PerformanceType
+  rating            Decimal?        @db.Decimal(5, 2)
+  statistics        Json?
+  notes             String?
+  recordedById      String?         @db.Uuid
+  recordedAt        DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sport Sport @relation(fields: [sportId], references: [id], onDelete: Cascade)
+
+  @@index([userId, sportId])
+  @@index([sportId, recordedAt])
+  @@index([fixtureId])
+  @@index([trainingSessionId])
+}
+
+model Announcement {
+  id          String             @id @default(uuid()) @db.Uuid
+  title       String
+  content     String
+  scope       AnnouncementScope
+  status      AnnouncementStatus @default(DRAFT)
+  sportId     String?            @db.Uuid
+  authorId    String             @db.Uuid
+  featured    Boolean            @default(false)
+  publishedAt DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  sport  Sport?             @relation(fields: [sportId], references: [id], onDelete: Cascade)
+  author User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  reads  AnnouncementRead[]
+
+  @@index([scope, status, publishedAt])
+  @@index([sportId, status, publishedAt])
+  @@index([featured, publishedAt])
+}
+
+model AnnouncementRead {
+  id             String   @id @default(uuid()) @db.Uuid
+  announcementId String   @db.Uuid
+  userId         String   @db.Uuid
+  readAt         DateTime @default(now())
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([announcementId, userId])
+  @@index([userId, readAt])
+}
+
+model Notification {
+  id             String           @id @default(uuid()) @db.Uuid
+  userId         String           @db.Uuid
+  type           NotificationType
+  title          String
+  message        String
+  readAt         DateTime?
+  createdAt      DateTime         @default(now())
+  announcementId String?          @db.Uuid
+  fixtureId      String?          @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @db.Uuid
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
